@@ -145,6 +145,11 @@
           # Default to CUDA
           default = cudaShell;
         };
+        hydraJobs = {
+          cudaShell = cudaShell;
+          rocmShell = rocmShell;
+        };
+
       }
     );
 }
