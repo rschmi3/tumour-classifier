@@ -315,49 +315,6 @@ class BrainTumorClassifier:
 
         return best_name
 
-    def predict(self, image_path, model_path="best_model.pkl"):
-        """
-        Predict class for a new image
-
-        Parameters:
-        -----------
-        image_path : str
-            Path to the image
-        model_path : str
-            Path to saved model
-        """
-        # Load model
-        model_data = joblib.load(model_path)
-        model = model_data["model"]
-        scaler = model_data["scaler"]
-        label_encoder = model_data["label_encoder"]
-
-        # Load and preprocess image
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError("Predict image is none")
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, self.image_size)
-
-        # Extract features (using combined features)
-        features = self.extract_combined_features(np.array([img]))
-        features = scaler.transform(features)
-
-        # Predict
-        prediction = model.predict(features)[0]
-        probabilities = model.predict_proba(features)[0]
-
-        predicted_class = label_encoder.inverse_transform([prediction])[0]
-
-        print(f"\nPrediction for {image_path}:")
-        print(f"  Class: {predicted_class}")
-        print(f"  Confidence: {probabilities[prediction]:.4f}")
-        print(f"\nAll probabilities:")
-        for i, class_name in enumerate(label_encoder.classes_):
-            print(f"  {class_name}: {probabilities[i]:.4f}")
-
-        return predicted_class, probabilities
-
 
 def main():
     """Main execution function"""
