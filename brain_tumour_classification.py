@@ -271,8 +271,8 @@ class BrainTumorClassifier:
     def save_models(self):
         for name, model in self.models.items():
             filename = name.replace(" ", "_")
-            filename = name.replace(")", "_")
-            filename = name.replace("(", "_")
+            filename = filename.replace(")", "")
+            filename = filename.replace("(", "")
             filename = filename + ".pkl"
             print(f"\nSaving model: {name} to {filename}")
 
