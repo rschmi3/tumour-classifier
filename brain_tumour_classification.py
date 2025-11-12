@@ -185,7 +185,10 @@ class BrainTumorClassifier:
                 random_state=random_state,
             ),
             "SVM (Linear)": SVC(
-                kernel="linear", C=1, probability=True, random_state=random_state
+                kernel="linear",
+                C=1,
+                probability=True,
+                random_state=random_state,
             ),
             "Gradient Boosting": xgb.XGBClassifier(
                 n_estimators=100,
@@ -255,7 +258,9 @@ class BrainTumorClassifier:
                     y_val_bin, y_proba, average="macro", multi_class="ovr"
                 )
             else:
-                auc_roc = roc_auc_score(y_val, y_proba[:, 1])
+                auc_roc = roc_auc_score(
+                    y_val, y_proba, average="macro", multi_class="ovr"
+                )
             print(f"\nAUC-ROC (macro): {auc_roc:.4f}")
 
             # Store test results
@@ -330,7 +335,7 @@ class BrainTumorClassifier:
         best_name = max(
             self.results.keys(), key=lambda x: self.results[x]["test_accuracy"]
         )
-        best_model = self.results[best_name]["model"]
+        best_model = self.models[best_name]
 
         # Save model, scaler, and label encoder
         model_data = {
