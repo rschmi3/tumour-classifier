@@ -1,0 +1,438 @@
+import os
+import time
+
+import cv2
+import joblib
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import xgboost as xgb
+from skimage.feature import hog, local_binary_pattern
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
+from sklearn.svm import SVC
+
+from setup_data import *
+
+random_state = 42
+
+# Set random seed for reproducibility
+np.random.seed(random_state)
+
+
+class BrainTumorClassifier:
+    def __init__(
+        self,
+        train_data: tuple[np.ndarray, np.ndarray],
+        valid_data: tuple[np.ndarray, np.ndarray],
+        classes: set[str],
+    ):
+        """
+        Initialize the Brain Tumor Classifier
+
+        Parameters:
+        -----------
+        dataset_path : str, optional
+            Path to the dataset. If None, will download from Kaggle
+        image_size : tuple
+            Target size for resizing images (height, width)
+        """
+        self.train_data = train_data
+        self.valid_data = valid_data
+        self.label_encoder = LabelEncoder()
+        self.scaler = StandardScaler()
+        self.models = {}
+        self.results = {}
+
+        # Extract shape and assert it's a valid tuple
+        shape = train_data[0].shape
+        assert len(shape) >= 2, "Image array must have at least 2 dimensions"
+        self.image_size: tuple[int, int] = (shape[0], shape[1])
+        self.classes = classes
+
+    def extract_hog_features(self, images):
+        """Extract HOG features from images"""
+        print("Extracting HOG features...")
+        features = []
+        for img in images:
+            # Convert to grayscale
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            # Extract HOG features
+            fd = hog(
+                gray,
+                orientations=9,
+                pixels_per_cell=(8, 8),
+                cells_per_block=(2, 2),
+                visualize=False,
+            )
+            features.append(fd)
+        return np.array(features)
+
+    def extract_lbp_features(self, images):
+        """Extract Local Binary Pattern features"""
+        print("Extracting LBP features...")
+        features = []
+        for img in images:
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            # LBP parameters
+            radius = 3
+            n_points = 8 * radius
+            lbp = local_binary_pattern(gray, n_points, radius, method="uniform")
+            # Create histogram
+            hist, _ = np.histogram(
+                lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2)
+            )
+            # Normalize
+            hist = hist.astype("float")
+            hist /= hist.sum() + 1e-6
+            features.append(hist)
+        return np.array(features)
+
+    def extract_color_features(self, images):
+        """Extract color histogram features"""
+        print("Extracting color histogram features...")
+        features = []
+        for img in images:
+            # Calculate histogram for each channel
+            hist_features = []
+            for i in range(3):  # RGB channels
+                hist = cv2.calcHist([img], [i], None, [32], [0, 256])
+                hist = hist.flatten()
+                hist = hist / (hist.sum() + 1e-6)  # Normalize
+                hist_features.extend(hist)
+            features.append(hist_features)
+        return np.array(features)
+
+    def extract_combined_features(self, images):
+        """Combine multiple feature extraction methods"""
+        print("Extracting combined features (HOG + LBP + Color)...")
+        hog_features = self.extract_hog_features(images)
+        lbp_features = self.extract_lbp_features(images)
+        color_features = self.extract_color_features(images)
+
+        # Concatenate all features
+        combined = np.hstack([hog_features, lbp_features, color_features])
+        print(f"Combined feature shape: {combined.shape}")
+        return combined
+
+    def prepare_data(self, feature_type="combined"):
+        """
+        Load and prepare data with specified feature extraction
+
+        Parameters:
+        -----------
+        feature_type : str
+            Type of features to extract: 'hog', 'lbp', 'color', or 'combined'
+        """
+        # Load images
+        X_train, y_train = self.train_data
+
+        X_val, y_val = self.valid_data
+
+        # Extract features
+        if feature_type == "hog":
+            X_train = self.extract_hog_features(X_train)
+            X_val = self.extract_hog_features(X_val)
+        elif feature_type == "lbp":
+            X_train = self.extract_lbp_features(X_train)
+            X_val = self.extract_lbp_features(X_val)
+        elif feature_type == "color":
+            X_train = self.extract_color_features(X_train)
+            X_val = self.extract_color_features(X_val)
+        elif feature_type == "combined":
+            X_train = self.extract_combined_features(X_train)
+            X_val = self.extract_combined_features(X_val)
+        else:
+            raise ValueError(f"Unknown feature type: {feature_type}")
+
+        # Encode labels
+        y_train = self.label_encoder.fit_transform(y_train)
+        y_val = self.label_encoder.transform(y_val)
+
+        # Scale features
+        X_train = self.scaler.fit_transform(X_train)
+        X_val = self.scaler.transform(X_val)
+
+        print(f"\nData split:")
+        print(f"  Training set: {np.shape(X_train)}")
+        print(f"  Validation set: {np.shape(X_val)}")
+
+        return X_train, X_val, y_train, y_val
+
+    def initialize_models(self):
+        """Initialize multiple classification models"""
+        self.models = {
+            "Random Forest": RandomForestClassifier(
+                n_estimators=200,
+                max_depth=20,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=random_state,
+                n_jobs=-1,
+            ),
+            "SVM (RBF)": SVC(
+                kernel="rbf",
+                C=10,
+                gamma="scale",
+                probability=True,
+                random_state=random_state,
+            ),
+            "SVM (Linear)": SVC(
+                kernel="linear", C=1, probability=True, random_state=random_state
+            ),
+            "Gradient Boosting": xgb.XGBClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=5,
+                random_state=random_state,
+                device="cuda",
+            ),
+            "K-Nearest Neighbors": KNeighborsClassifier(
+                n_neighbors=5, weights="distance", n_jobs=-1
+            ),
+        }
+        print(f"\nInitialized {len(self.models)} models:")
+        for name in self.models.keys():
+            print(f"  - {name}")
+
+    def train_models(self, X_train, y_train):
+        """Train all models and evaluate on validation set"""
+        print("\n" + "=" * 60)
+        print("TRAINING MODELS")
+        print("=" * 60)
+
+        for name, model in self.models.items():
+            train_start = time.time()
+            print(f"\nTraining {name}...")
+            model.fit(X_train, y_train)
+            train_end = time.time()
+            self.results[name] = {}
+            self.results[name]["training_time"] = train_end - train_start
+            print(self.results[name]["training_time"])
+
+    def evaluate_models(self, X_val, y_val):
+        """Evaluate all trained models on test set"""
+        print("\n" + "=" * 60)
+        print("EVALUATING MODELS ON VALIDATION SET")
+        print("=" * 60)
+
+        for name, model in self.models.items():
+            print(f"\n{name}:")
+            print("-" * 40)
+
+            # Predict
+            y_pred = model.predict(X_val)
+            y_proba = model.predict_proba(X_val)
+
+            # Accuracy
+            accuracy = accuracy_score(y_val, y_pred)
+            print(f"Accuracy: {accuracy:.4f}")
+
+            # Classification report
+            print("\nClassification Report:")
+            print(
+                classification_report(
+                    y_val, y_pred, target_names=self.label_encoder.classes_
+                )
+            )
+
+            # Confusion matrix
+            cm = confusion_matrix(y_val, y_pred)
+
+            # Calculate AUC-ROC for multi-class
+            n_classes = len(self.label_encoder.get_params())
+            y_val_bin = label_binarize(y=y_val, classes=range(n_classes))
+
+            if (y_val_bin is None) and y_val_bin.shape[1] > 2:
+                auc_roc = roc_auc_score(
+                    y_val_bin, y_proba, average="macro", multi_class="ovr"
+                )
+            else:
+                auc_roc = roc_auc_score(y_val, y_proba[:, 1])
+            print(f"\nAUC-ROC (macro): {auc_roc:.4f}")
+
+            # Store test results
+            self.results[name] = {}
+            self.results[name]["test_accuracy"] = accuracy
+            self.results[name]["test_predictions"] = y_pred
+            self.results[name]["test_probabilities"] = y_proba
+            self.results[name]["confusion_matrix"] = cm
+            self.results[name]["auc_roc"] = auc_roc
+
+    def plot_results(self, save_dir="results"):
+        """Create visualizations of model performance"""
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 1. Model comparison bar chart
+        plt.figure(figsize=(12, 6))
+        names = list(self.results.keys())
+        accuracies = [self.results[name]["test_accuracy"] for name in names]
+        auc_scores = [self.results[name]["auc_roc"] for name in names]
+
+        x = np.arange(len(names))
+        width = 0.35
+
+        plt.bar(x - width / 2, accuracies, width, label="Accuracy", alpha=0.8)
+        plt.bar(x + width / 2, auc_scores, width, label="AUC-ROC", alpha=0.8)
+
+        plt.xlabel("Model")
+        plt.ylabel("Score")
+        plt.title("Model Performance Comparison")
+        plt.xticks(x, names, rotation=45, ha="right")
+        plt.legend()
+        plt.ylim([0, 1])
+        plt.tight_layout()
+        plt.savefig(f"{save_dir}/model_comparison.png", dpi=300, bbox_inches="tight")
+        plt.close()
+
+        # 2. Confusion matrices
+        n_models = len(self.results)
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        axes = axes.flatten()
+
+        for idx, (name, result) in enumerate(self.results.items()):
+            if idx >= len(axes):
+                break
+            cm = result["confusion_matrix"]
+            sns.heatmap(
+                cm,
+                annot=True,
+                fmt="d",
+                cmap="Blues",
+                ax=axes[idx],
+                xticklabels=list(self.classes),
+                yticklabels=list(self.classes),
+            )
+            axes[idx].set_title(f'{name}\nAccuracy: {result["test_accuracy"]:.4f}')
+            axes[idx].set_ylabel("True Label")
+            axes[idx].set_xlabel("Predicted Label")
+
+        # Hide unused subplots
+        for idx in range(n_models, len(axes)):
+            axes[idx].axis("off")
+
+        plt.tight_layout()
+        plt.savefig(f"{save_dir}/confusion_matrices.png", dpi=300, bbox_inches="tight")
+        plt.close()
+
+        print(f"\nPlots saved to {save_dir}/")
+
+    def save_best_model(self, save_path="best_model.pkl"):
+        """Save the best performing model"""
+        # Find best model by test accuracy
+        best_name = max(
+            self.results.keys(), key=lambda x: self.results[x]["test_accuracy"]
+        )
+        best_model = self.results[best_name]["model"]
+
+        # Save model, scaler, and label encoder
+        model_data = {
+            "model": best_model,
+            "scaler": self.scaler,
+            "label_encoder": self.label_encoder,
+            "model_name": best_name,
+            "accuracy": self.results[best_name]["test_accuracy"],
+            "auc_roc": self.results[best_name]["auc_roc"],
+        }
+
+        joblib.dump(model_data, save_path)
+        print(f"\nBest model ({best_name}) saved to {save_path}")
+        print(f"  Accuracy: {self.results[best_name]['test_accuracy']:.4f}")
+        print(f"  AUC-ROC: {self.results[best_name]['auc_roc']:.4f}")
+
+        return best_name
+
+    def predict(self, image_path, model_path="best_model.pkl"):
+        """
+        Predict class for a new image
+
+        Parameters:
+        -----------
+        image_path : str
+            Path to the image
+        model_path : str
+            Path to saved model
+        """
+        # Load model
+        model_data = joblib.load(model_path)
+        model = model_data["model"]
+        scaler = model_data["scaler"]
+        label_encoder = model_data["label_encoder"]
+
+        # Load and preprocess image
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError("Predict image is none")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img, self.image_size)
+
+        # Extract features (using combined features)
+        features = self.extract_combined_features(np.array([img]))
+        features = scaler.transform(features)
+
+        # Predict
+        prediction = model.predict(features)[0]
+        probabilities = model.predict_proba(features)[0]
+
+        predicted_class = label_encoder.inverse_transform([prediction])[0]
+
+        print(f"\nPrediction for {image_path}:")
+        print(f"  Class: {predicted_class}")
+        print(f"  Confidence: {probabilities[prediction]:.4f}")
+        print(f"\nAll probabilities:")
+        for i, class_name in enumerate(label_encoder.classes_):
+            print(f"  {class_name}: {probabilities[i]:.4f}")
+
+        return predicted_class, probabilities
+
+
+def main():
+    """Main execution function"""
+    print("=" * 60)
+    print("BRAIN TUMOR CLASSIFICATION")
+    print("=" * 60)
+
+    dataset_path = download_dataset("deeppythonist/brain-tumor-mri-dataset")
+
+    train_data, valid_data, classes = load_images_and_labels(
+        dataset_path=dataset_path, image_size=(128, 128)
+    )
+
+    # Initialize classifier
+    classifier = BrainTumorClassifier(
+        train_data=train_data, valid_data=valid_data, classes=classes
+    )
+
+    # Download and prepare data
+    X_train, X_val, y_train, y_val = classifier.prepare_data(feature_type="combined")
+
+    # Initialize and train models
+    classifier.initialize_models()
+    classifier.train_models(X_train, y_train)
+
+    # Evaluate on test set
+    classifier.evaluate_models(X_val, y_val)
+
+    # Create visualizations
+    classifier.plot_results()
+
+    # Save best model
+    best_model_name = classifier.save_best_model("best_brain_tumor_model.pkl")
+
+    print("\n" + "=" * 60)
+    print("TRAINING COMPLETE")
+    print("=" * 60)
+    print(f"\nBest Model: {best_model_name}")
+    print("\nResults saved to 'results/' directory")
+    print("Best model saved to 'best_brain_tumor_model.pkl'")
+
+
+if __name__ == "__main__":
+    main()
