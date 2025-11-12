@@ -2,4 +2,4 @@
 .venv-rocm/*
 .direnv/*
 __pycache__/*
-best_brain_tumor_model.pkl
+*.pkl

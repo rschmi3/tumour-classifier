@@ -335,6 +335,28 @@ class BrainTumorClassifier:
 
         print(f"\nPlots saved to {save_dir}/")
 
+    def save_models(self):
+        for name, model in self.models.items():
+            filename = name.replace(" ", "_")
+            filename = name.replace(")", "_")
+            filename = name.replace("(", "_")
+            filename = filename + ".pkl"
+            print(f"\nSaving model: {name} to {filename}")
+
+            # Save model, scaler, and label encoder
+            model_data = {
+                "model": model,
+                "scaler": self.scaler,
+                "label_encoder": self.label_encoder,
+                "model_name": name,
+                "accuracy": self.results[name]["test_accuracy"],
+                "auc_roc": self.results[name]["auc_roc"],
+            }
+
+            joblib.dump(model_data, filename)
+
+        return self.save_best_model("best_brain_tumor_model.pkl")
+
     def save_best_model(self, save_path="best_model.pkl"):
         """Save the best performing model"""
         # Find best model by test accuracy
@@ -438,8 +460,8 @@ def main():
     # Create visualizations
     classifier.plot_results()
 
-    # Save best model
-    best_model_name = classifier.save_best_model("best_brain_tumor_model.pkl")
+    # Save models
+    best_model_name = classifier.save_models()
 
     print("\n" + "=" * 60)
     print("TRAINING COMPLETE")
