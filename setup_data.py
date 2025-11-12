@@ -17,16 +17,7 @@ def download_dataset(dataset: str):
 def load_images_and_labels(
     dataset_path: str, image_size: tuple[int, int]
 ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray], set[str]]:
-    """
-    Load images and labels from the dataset directory
-
-    Returns:
-    --------
-    X : list
-        List of images
-    y : list
-        List of labels
-    """
+    """Load images and labels from the dataset directory"""
 
     X_train: list[MatLike] = []
     X_valid: list[MatLike] = []
