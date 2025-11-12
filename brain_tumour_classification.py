@@ -1,3 +1,4 @@
+import argparse
 import os
 import time
 
@@ -33,16 +34,19 @@ class BrainTumorClassifier:
         train_data: tuple[np.ndarray, np.ndarray],
         valid_data: tuple[np.ndarray, np.ndarray],
         classes: set[str],
+        cuda: bool = False,
     ):
         """
         Initialize the Brain Tumor Classifier
 
         Parameters:
         -----------
-        dataset_path : str, optional
-            Path to the dataset. If None, will download from Kaggle
-        image_size : tuple
-            Target size for resizing images (height, width)
+        train_data : tuple[np.ndarray, np.ndarray]
+            tuple of X and y that makes up the training dataset
+        valid_data : tuple[np.ndarray, np.ndarray]
+            tuple of X and y that makes up the validation dataset
+        classes : set[str]
+            object class labels
         """
         self.train_data = train_data
         self.valid_data = valid_data
@@ -50,6 +54,8 @@ class BrainTumorClassifier:
         self.scaler = StandardScaler()
         self.models = {}
         self.results = {}
+        self.classes = classes
+        self.cuda = cuda
 
         # Extract shape and assert it's a valid tuple
         shape = train_data[0].shape
@@ -195,7 +201,7 @@ class BrainTumorClassifier:
                 learning_rate=0.1,
                 max_depth=5,
                 random_state=random_state,
-                device="cuda",
+                device="cuda" if self.cuda else "cpu",
             ),
             "K-Nearest Neighbors": KNeighborsClassifier(
                 n_neighbors=5, weights="distance", n_jobs=-1
@@ -400,8 +406,12 @@ class BrainTumorClassifier:
 
 def main():
     """Main execution function"""
+    parser = argparse.ArgumentParser(description="Tumour classification project")
+
+    parser.add_argument("--cuda", action="store_true", help="Enable cuda for xgboost")
+    args = parser.parse_args()
     print("=" * 60)
-    print("BRAIN TUMOR CLASSIFICATION")
+    print(f"BRAIN TUMOR CLASSIFICATION {'(CUDA)' if args.cuda else ''}")
     print("=" * 60)
 
     dataset_path = download_dataset("deeppythonist/brain-tumor-mri-dataset")
@@ -412,7 +422,7 @@ def main():
 
     # Initialize classifier
     classifier = BrainTumorClassifier(
-        train_data=train_data, valid_data=valid_data, classes=classes
+        train_data=train_data, valid_data=valid_data, classes=classes, cuda=True
     )
 
     # Download and prepare data
