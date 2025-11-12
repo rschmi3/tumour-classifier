@@ -215,7 +215,6 @@ class BrainTumorClassifier:
         os.makedirs(save_dir, exist_ok=True)
 
         # 1. Model comparison bar chart
-        plt.figure(figsize=(12, 6))
         names = list(self.results.keys())
         accuracies = [self.results[name]["test_accuracy"] for name in names]
         auc_scores = [self.results[name]["auc_roc"] for name in names]
@@ -223,22 +222,42 @@ class BrainTumorClassifier:
         x = np.arange(len(names))
         width = 0.35
 
-        plt.bar(x - width / 2, accuracies, width, label="Accuracy", alpha=0.8)
-        plt.bar(x + width / 2, auc_scores, width, label="AUC-ROC", alpha=0.8)
+        _, ax1 = plt.subplots(figsize=(12, 6))
 
-        plt.xlabel("Model")
-        plt.ylabel("Score")
+        ax1.bar(
+            x - width / 2,
+            accuracies,
+            width,
+            label="Accuracy",
+            alpha=0.8,
+            color="blue",
+        )
+        ax1.set_xlabel("Model")
+        ax1.set_ylabel("Accuracy", color="blue")
+        ax1.tick_params(axis="y", labelcolor="blue")
+
+        ax2 = ax1.twinx()
+        ax2.bar(
+            x + width / 2, auc_scores, width, label="AUC-ROC", alpha=0.8, color="red"
+        )
+        ax2.set_ylabel("AUC-ROC Score", color="red")
+        ax2.tick_params(axis="y", labelcolor="red")
+
         plt.title("Model Performance Comparison")
-        plt.xticks(x, names, rotation=45, ha="right")
-        plt.legend()
-        plt.ylim([0, 1])
+        plt.xticks(x, names, rotation=0, ha="center")
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        plt.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+
+        plt.ylim(0, 1.0)
         plt.tight_layout()
         plt.savefig(f"{save_dir}/model_comparison.png", dpi=300, bbox_inches="tight")
         plt.close()
 
         # 2. Confusion matrices
         n_models = len(self.results)
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        _, axes = plt.subplots(2, 3, figsize=(18, 12))
         axes = axes.flatten()
 
         for idx, (name, result) in enumerate(self.results.items()):
