@@ -116,6 +116,13 @@ class BrainTumorClassifier:
                 random_state=random_state,
                 n_jobs=-1,
             ),
+            "Gradient Boosting": xgb.XGBClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=5,
+                random_state=random_state,
+                device="cuda" if self.cuda else "cpu",
+            ),
             "SVM (RBF)": SVC(
                 kernel="rbf",
                 C=10,
@@ -128,13 +135,6 @@ class BrainTumorClassifier:
                 C=1,
                 probability=True,
                 random_state=random_state,
-            ),
-            "Gradient Boosting": xgb.XGBClassifier(
-                n_estimators=100,
-                learning_rate=0.1,
-                max_depth=5,
-                random_state=random_state,
-                device="cuda" if self.cuda else "cpu",
             ),
             "K-Nearest Neighbors": KNeighborsClassifier(
                 n_neighbors=5, weights="distance", n_jobs=-1
