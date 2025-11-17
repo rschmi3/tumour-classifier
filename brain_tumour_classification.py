@@ -1,11 +1,19 @@
 import argparse
 import os
+import random
 import time
+
+random_state = 42
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+# For GPU determinism (makes things slower but reproducible)
+os.environ["TF_DETERMINISTIC_OPS"] = "1"
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import tensorflow as tf
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
@@ -19,12 +27,32 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
 from sklearn.svm import SVC
 
 from feature_extraction import *
+from neural_nets import *
 from setup_data import *
 
-random_state = 42
-
 # Set random seed for reproducibility
+random.seed(random_state)
 np.random.seed(random_state)
+tf.random.set_seed(random_state)
+tf.config.experimental.enable_op_determinism()
+
+# Set TensorFlow to only allocate what it needs
+gpus = tf.config.experimental.list_physical_devices("GPU")
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+
+model_files = {
+    "Random Forest": "Random_Forest.pkl",
+    "SVM (RBF)": "SVM_RBF.pkl",
+    "SVM (Linear)": "SVM_Linear.pkl",
+    "Gradient Boosting": "Gradient_Boosting.pkl",
+    "K-Nearest Neighbors": "K-Nearest_Neighbors.pkl",
+    "neural": "neural.weights.h5",
+}
 
 
 class BrainTumorClassifier:
@@ -59,7 +87,7 @@ class BrainTumorClassifier:
         # Extract shape and assert it's a valid tuple
         shape = train_data[0].shape
         assert len(shape) >= 2, "Image array must have at least 2 dimensions"
-        self.image_size: tuple[int, int] = (shape[0], shape[1])
+        self.image_size: tuple[int, int, int] = (shape[0], shape[1], 3)
 
     def prepare_data(self, feature_type="combined"):
         """
@@ -105,7 +133,15 @@ class BrainTumorClassifier:
 
         return X_train, X_val, y_train, y_val
 
-    def initialize_models(self):
+    def initialize_models(self, random_state):
+        self.initialize_conventional_models(random_state)
+        self.initialize_neural_network()
+        print(f"\nInitialized {len(self.models)} models:")
+        for name in self.models.keys():
+            print(f"  - {name}")
+        print(f"  - neural")
+
+    def initialize_conventional_models(self, random_state):
         """Initialize multiple classification models"""
         self.models = {
             "Random Forest": RandomForestClassifier(
@@ -140,16 +176,26 @@ class BrainTumorClassifier:
                 n_neighbors=5, weights="distance", n_jobs=-1
             ),
         }
-        print(f"\nInitialized {len(self.models)} models:")
-        for name in self.models.keys():
-            print(f"  - {name}")
+
+    def initialize_neural_network(self):
+        """Initialize neural network model"""
+        model = TumourNet()
+        model.build((None, 128, 128, 3))
+        self.neural = TumourNetWrapper(model)
 
     def train_models(self, X_train, y_train):
-        """Train all models and evaluate on validation set"""
+        """Train all models and evaluate"""
         print("\n" + "=" * 60)
         print("TRAINING MODELS")
         print("=" * 60)
 
+        y_train_neural = self.label_encoder.fit_transform(self.train_data[1])
+
+        self.train_conventional_models(X_train, y_train)
+        self.train_neural_network(self.train_data[0], y_train_neural)
+
+    def train_conventional_models(self, X_train, y_train):
+        """Train all conventional models"""
         for name, model in self.models.items():
             train_start = time.time()
             print(f"\nTraining {name}...")
@@ -159,56 +205,74 @@ class BrainTumorClassifier:
             self.results[name]["training_time"] = train_end - train_start
             print(self.results[name]["training_time"])
 
+    def train_neural_network(self, X_train, y_train):
+        """Train neural network"""
+        self.neural.compile()
+        self.neural.fit(X_train, y_train, epochs=12)
+
     def evaluate_models(self, X_val, y_val):
-        """Evaluate all trained models on test set"""
         print("\n" + "=" * 60)
         print("EVALUATING MODELS ON VALIDATION SET")
         print("=" * 60)
 
-        for name, model in self.models.items():
-            print(f"\n{name}:")
-            print("-" * 40)
+        y_val_neural = self.label_encoder.fit_transform(self.valid_data[1])
 
-            # Predict
-            y_pred = model.predict(X_val)
-            y_proba = model.predict_proba(X_val)
+        self.evaluate_conventional_models(X_val, y_val)
+        self.evaluate_neural_net(self.valid_data[0], y_val_neural)
+        return self.determine_best_model()
 
-            # Accuracy
-            accuracy = accuracy_score(y_val, y_pred)
-            print(f"Accuracy: {accuracy:.4f}")
+    def evaluate_model(self, name, model, X_val, y_val):
+        """Evaluate model and store results"""
+        print(f"\n{name}:")
+        print("-" * 40)
 
-            # Classification report
-            print("\nClassification Report:")
-            print(
-                classification_report(
-                    y_val, y_pred, target_names=self.label_encoder.classes_
-                )
+        # Predict
+        y_pred = model.predict(X_val)
+        y_proba = model.predict_proba(X_val)
+
+        # Accuracy
+        accuracy = accuracy_score(y_val, y_pred)
+        print(f"Accuracy: {accuracy:.4f}")
+
+        # Classification report
+        print("\nClassification Report:")
+        print(
+            classification_report(
+                y_val, y_pred, target_names=self.label_encoder.classes_
             )
+        )
 
-            # Confusion matrix
-            cm = confusion_matrix(y_val, y_pred)
+        # Confusion matrix
+        cm = confusion_matrix(y_val, y_pred)
 
-            # Calculate AUC-ROC for multi-class
-            n_classes = len(self.label_encoder.get_params())
-            y_val_bin = label_binarize(y=y_val, classes=range(n_classes))
+        # Calculate AUC-ROC for multi-class
+        n_classes = len(self.label_encoder.get_params())
+        y_val_bin = label_binarize(y=y_val, classes=range(n_classes))
 
-            if (y_val_bin is None) and y_val_bin.shape[1] > 2:
-                auc_roc = roc_auc_score(
-                    y_val_bin, y_proba, average="macro", multi_class="ovr"
-                )
-            else:
-                auc_roc = roc_auc_score(
-                    y_val, y_proba, average="macro", multi_class="ovr"
-                )
-            print(f"\nAUC-ROC (macro): {auc_roc:.4f}")
+        if (y_val_bin is None) and y_val_bin.shape[1] > 2:
+            auc_roc = roc_auc_score(
+                y_val_bin, y_proba, average="macro", multi_class="ovr"
+            )
+        else:
+            auc_roc = roc_auc_score(y_val, y_proba, average="macro", multi_class="ovr")
+        print(f"\nAUC-ROC (macro): {auc_roc:.4f}")
 
-            # Store test results
-            self.results[name] = {}
-            self.results[name]["test_accuracy"] = accuracy
-            self.results[name]["test_predictions"] = y_pred
-            self.results[name]["test_probabilities"] = y_proba
-            self.results[name]["confusion_matrix"] = cm
-            self.results[name]["auc_roc"] = auc_roc
+        # Store test results
+        self.results[name] = {}
+        self.results[name]["test_accuracy"] = accuracy
+        self.results[name]["test_predictions"] = y_pred
+        self.results[name]["test_probabilities"] = y_proba
+        self.results[name]["confusion_matrix"] = cm
+        self.results[name]["auc_roc"] = auc_roc
+
+    def evaluate_conventional_models(self, X_val, y_val):
+        """Evaluate conventional models"""
+        for name, model in self.models.items():
+            self.evaluate_model(name, model, X_val, y_val)
+
+    def evaluate_neural_net(self, X_val, y_val):
+        """Evaluate neural network"""
+        self.evaluate_model("neural", self.neural, X_val, y_val)
 
     def plot_results(self, save_dir="results"):
         """Create visualizations of model performance"""
@@ -287,52 +351,51 @@ class BrainTumorClassifier:
 
         print(f"\nPlots saved to {save_dir}/")
 
+    def save_conventional_model(self, name, model):
+        filename = model_files[name]
+        print(f"\nSaving model: {name} to {filename}")
+
+        # Save model, scaler, and label encoder
+        model_data = {
+            "model": model,
+            "scaler": self.scaler,
+            "label_encoder": self.label_encoder,
+            "model_name": name,
+            "accuracy": self.results[name]["test_accuracy"],
+            "auc_roc": self.results[name]["auc_roc"],
+        }
+
+        joblib.dump(model_data, filename)
+
+    def save_neural_network(self, name):
+        filename = model_files[name]
+        self.neural.save_weights(filename)
+
     def save_models(self):
         for name, model in self.models.items():
-            filename = name.replace(" ", "_")
-            filename = filename.replace(")", "")
-            filename = filename.replace("(", "")
-            filename = filename + ".pkl"
-            print(f"\nSaving model: {name} to {filename}")
+            self.save_conventional_model(name, model)
+        self.save_neural_network("neural")
 
-            # Save model, scaler, and label encoder
-            model_data = {
-                "model": model,
-                "scaler": self.scaler,
-                "label_encoder": self.label_encoder,
-                "model_name": name,
-                "accuracy": self.results[name]["test_accuracy"],
-                "auc_roc": self.results[name]["auc_roc"],
-            }
-
-            joblib.dump(model_data, filename)
-
-        return self.save_best_model("best_brain_tumor_model.pkl")
-
-    def save_best_model(self, save_path="best_model.pkl"):
+    def determine_best_model(self):
         """Save the best performing model"""
         # Find best model by test accuracy
         best_name = max(
             self.results.keys(), key=lambda x: self.results[x]["test_accuracy"]
         )
-        best_model = self.models[best_name]
 
-        # Save model, scaler, and label encoder
-        model_data = {
-            "model": best_model,
-            "scaler": self.scaler,
-            "label_encoder": self.label_encoder,
-            "model_name": best_name,
-            "accuracy": self.results[best_name]["test_accuracy"],
-            "auc_roc": self.results[best_name]["auc_roc"],
-        }
-
-        joblib.dump(model_data, save_path)
-        print(f"\nBest model ({best_name}) saved to {save_path}")
+        print(f"\nBest model ({best_name})")
         print(f"  Accuracy: {self.results[best_name]['test_accuracy']:.4f}")
         print(f"  AUC-ROC: {self.results[best_name]['auc_roc']:.4f}")
 
         return best_name
+
+    def load_models(self):
+        for name, _ in self.models.items():
+
+            model_data = joblib.load(model_files[name])
+            self.models[name] = model_data["model"]
+        self.initialize_neural_network()
+        self.neural = self.neural.load_weights(model_files["neural"])
 
 
 def main():
@@ -340,6 +403,9 @@ def main():
     parser = argparse.ArgumentParser(description="Tumour classification project")
 
     parser.add_argument("--cuda", action="store_true", help="Enable cuda for xgboost")
+    parser.add_argument(
+        "--train", action="store_true", help="Train new models or load existing ones"
+    )
     args = parser.parse_args()
     print("=" * 60)
     print(f"BRAIN TUMOR CLASSIFICATION {'(CUDA)' if args.cuda else ''}")
@@ -353,31 +419,34 @@ def main():
 
     # Initialize classifier
     classifier = BrainTumorClassifier(
-        train_data=train_data, valid_data=valid_data, classes=classes, cuda=True
+        train_data=train_data, valid_data=valid_data, classes=classes, cuda=args.cuda
     )
+
+    # Initialize and train models
+    classifier.initialize_models(random_state)
 
     # Download and prepare data
     X_train, X_val, y_train, y_val = classifier.prepare_data(feature_type="combined")
 
-    # Initialize and train models
-    classifier.initialize_models()
-    classifier.train_models(X_train, y_train)
+    if args.train:
+        classifier.train_models(X_train, y_train)
+    else:
+        classifier.load_models()
 
-    # Evaluate on test set
-    classifier.evaluate_models(X_val, y_val)
+    best_model_name = classifier.evaluate_models(X_val, y_val)
 
     # Create visualizations
     classifier.plot_results()
 
-    # Save models
-    best_model_name = classifier.save_models()
+    if args.train:
+        # Save models
+        classifier.save_models()
 
     print("\n" + "=" * 60)
     print("TRAINING COMPLETE")
     print("=" * 60)
     print(f"\nBest Model: {best_model_name}")
     print("\nResults saved to 'results/' directory")
-    print("Best model saved to 'best_brain_tumor_model.pkl'")
 
 
 if __name__ == "__main__":

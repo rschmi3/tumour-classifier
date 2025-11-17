@@ -13,7 +13,10 @@
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
 
         # CUDA shell with FHS-style environment
         cudaShell = pkgs.mkShell {
@@ -27,6 +30,9 @@
             glib
             libGL
             glibc
+            cudaPackages.cuda_nvcc # Provides ptxas compiler
+            cudaPackages.cudatoolkit # Full CUDA toolkit
+            cudaPackages.cudnn # cuDNN for TensorFlow
           ];
 
           shellHook = ''
@@ -37,6 +43,9 @@
                 pkgs.glib
                 pkgs.libGL
                 pkgs.glibc
+                pkgs.cudaPackages.cuda_nvcc # Provides ptxas compiler
+                pkgs.cudaPackages.cudatoolkit # Full CUDA toolkit
+                pkgs.cudaPackages.cudnn # cuDNN for TensorFlow
               ]
             }:/run/opengl-driver/lib:/run/opengl-driver-32/lib:$LD_LIBRARY_PATH"
 
