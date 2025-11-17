@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 import argparse
 import os
 import random
@@ -16,19 +18,17 @@ import seaborn as sns
 import tensorflow as tf
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    roc_auc_score,
-)
+from sklearn.metrics import (accuracy_score, classification_report,
+                             confusion_matrix, roc_auc_score)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
 from sklearn.svm import SVC
 
-from feature_extraction import *
-from neural_nets import *
-from setup_data import *
+from feature_extraction import (extract_color_features,
+                                extract_combined_features,
+                                extract_hog_features, extract_lbp_features)
+from neural_nets import TumourNet, TumourNetWrapper
+from setup_data import download_dataset, load_images_and_labels
 
 # Set random seed for reproducibility
 random.seed(random_state)
@@ -127,7 +127,7 @@ class BrainTumorClassifier:
         X_train = self.scaler.fit_transform(X_train)
         X_val = self.scaler.transform(X_val)
 
-        print(f"\nData split:")
+        print("\nData split:")
         print(f"  Training set: {np.shape(X_train)}")
         print(f"  Validation set: {np.shape(X_val)}")
 
@@ -139,7 +139,7 @@ class BrainTumorClassifier:
         print(f"\nInitialized {len(self.models)} models:")
         for name in self.models.keys():
             print(f"  - {name}")
-        print(f"  - neural")
+        print("  - neural")
 
     def initialize_conventional_models(self, random_state):
         """Initialize multiple classification models"""
@@ -338,7 +338,7 @@ class BrainTumorClassifier:
                 xticklabels=list(self.classes),
                 yticklabels=list(self.classes),
             )
-            axes[idx].set_title(f'{name}\nAccuracy: {result["test_accuracy"]:.4f}')
+            axes[idx].set_title(f"{name}\nAccuracy: {result['test_accuracy']:.4f}")
             axes[idx].set_ylabel("True Label")
             axes[idx].set_xlabel("Predicted Label")
 
@@ -392,7 +392,6 @@ class BrainTumorClassifier:
 
     def load_models(self):
         for name, _ in self.models.items():
-
             model_data = joblib.load(model_files[name])
             self.models[name] = model_data["model"]
         self.initialize_neural_network()

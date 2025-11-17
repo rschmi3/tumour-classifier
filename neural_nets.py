@@ -1,5 +1,5 @@
 import numpy as np
-from keras import Model, layers, losses, models, saving
+from keras import Model, layers, losses, models
 
 
 class Conv2dMaxPoolingLayer(Model):

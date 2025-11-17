@@ -4,7 +4,7 @@ import cv2
 import joblib
 import numpy as np
 
-from feature_extraction import *
+from feature_extraction import (extract_combined_features)
 
 
 def predict(image_path, model_path="best_model.pkl", image_size=(128, 128)):
@@ -44,7 +44,7 @@ def predict(image_path, model_path="best_model.pkl", image_size=(128, 128)):
     print(f"\nPrediction for {image_path}:")
     print(f"  Class: {predicted_class}")
     print(f"  Confidence: {probabilities[prediction]:.4f}")
-    print(f"\nAll probabilities:")
+    print("\nAll probabilities:")
     for i, class_name in enumerate(label_encoder.classes_):
         print(f"  {class_name}: {probabilities[i]:.4f}")
 
