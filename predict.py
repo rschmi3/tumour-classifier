@@ -4,7 +4,7 @@ import cv2
 import joblib
 import numpy as np
 
-from feature_extraction import (extract_combined_features)
+from feature_extraction import extract_combined_features
 
 
 def predict(image_path, model_path="best_model.pkl", image_size=(128, 128)):

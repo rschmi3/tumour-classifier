@@ -18,15 +18,22 @@ import seaborn as sns
 import tensorflow as tf
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (accuracy_score, classification_report,
-                             confusion_matrix, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
 from sklearn.svm import SVC
 
-from feature_extraction import (extract_color_features,
-                                extract_combined_features,
-                                extract_hog_features, extract_lbp_features)
+from feature_extraction import (
+    extract_color_features,
+    extract_combined_features,
+    extract_hog_features,
+    extract_lbp_features,
+)
 from neural_nets import TumourNet, TumourNetWrapper
 from setup_data import download_dataset, load_images_and_labels
 
