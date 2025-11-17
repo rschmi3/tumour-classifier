@@ -85,9 +85,9 @@ class BrainTumorClassifier:
         self.cuda = cuda
 
         # Extract shape and assert it's a valid tuple
-        shape = train_data[0].shape
+        shape = train_data[0].shape[1:]
         assert len(shape) >= 2, "Image array must have at least 2 dimensions"
-        self.image_size: tuple[int, int, int] = (shape[0], shape[1], 3)
+        self.image_shape: tuple[int, int, int] = shape
 
     def prepare_data(self, feature_type="combined"):
         """
@@ -180,7 +180,8 @@ class BrainTumorClassifier:
     def initialize_neural_network(self):
         """Initialize neural network model"""
         model = TumourNet()
-        model.build((None, 128, 128, 3))
+        dummy_input = np.zeros((1, *self.image_shape), dtype=np.float32)
+        _ = model(dummy_input)
         self.neural = TumourNetWrapper(model)
 
     def train_models(self, X_train, y_train):
@@ -208,7 +209,7 @@ class BrainTumorClassifier:
     def train_neural_network(self, X_train, y_train):
         """Train neural network"""
         self.neural.compile()
-        self.neural.fit(X_train, y_train, epochs=12)
+        self.neural.fit(X_train, y_train, epochs=10)
 
     def evaluate_models(self, X_val, y_val):
         print("\n" + "=" * 60)
@@ -395,7 +396,7 @@ class BrainTumorClassifier:
             model_data = joblib.load(model_files[name])
             self.models[name] = model_data["model"]
         self.initialize_neural_network()
-        self.neural = self.neural.load_weights(model_files["neural"])
+        self.neural.load_weights(model_files["neural"])
 
 
 def main():

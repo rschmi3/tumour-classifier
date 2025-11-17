@@ -45,10 +45,6 @@ class TumourNet(Model):
         x = self.dense2(x)
         return x
 
-    def build(self, input_shape):
-        print(input_shape)
-        super().build(input_shape)
-
 
 class TumourNetWrapper:
     def __init__(self, model) -> None:
@@ -87,8 +83,3 @@ class TumourNetWrapper:
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
-        return self
-
-    def build(self, input_shape):
-        print(input_shape)
-        self.model.build(input_shape)
