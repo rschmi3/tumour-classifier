@@ -51,7 +51,7 @@ model_files = {
     "SVM (Linear)": "SVM_Linear.pkl",
     "Gradient Boosting": "Gradient_Boosting.pkl",
     "K-Nearest Neighbors": "K-Nearest_Neighbors.pkl",
-    "neural": "neural.weights.h5",
+    "Neural": "Neural.weights.h5",
 }
 
 
@@ -139,7 +139,7 @@ class BrainTumorClassifier:
         print(f"\nInitialized {len(self.models)} models:")
         for name in self.models.keys():
             print(f"  - {name}")
-        print("  - neural")
+        print("  - Neural")
 
     def initialize_conventional_models(self, random_state):
         """Initialize multiple classification models"""
@@ -190,7 +190,7 @@ class BrainTumorClassifier:
         print("TRAINING MODELS")
         print("=" * 60)
 
-        y_train_neural = self.label_encoder.fit_transform(self.train_data[1])
+        y_train_neural = self.label_encoder.transform(self.train_data[1])
 
         self.train_conventional_models(X_train, y_train)
         self.train_neural_network(self.train_data[0], y_train_neural)
@@ -209,7 +209,7 @@ class BrainTumorClassifier:
     def train_neural_network(self, X_train, y_train):
         """Train neural network"""
         self.neural.compile()
-        self.neural.fit(X_train, y_train, epochs=10)
+        self.neural.fit(X_train, y_train, epochs=100)
 
     def evaluate_models(self, X_val, y_val):
         print("\n" + "=" * 60)
@@ -273,7 +273,7 @@ class BrainTumorClassifier:
 
     def evaluate_neural_net(self, X_val, y_val):
         """Evaluate neural network"""
-        self.evaluate_model("neural", self.neural, X_val, y_val)
+        self.evaluate_model("Neural", self.neural, X_val, y_val)
 
     def plot_results(self, save_dir="results"):
         """Create visualizations of model performance"""
@@ -375,7 +375,7 @@ class BrainTumorClassifier:
     def save_models(self):
         for name, model in self.models.items():
             self.save_conventional_model(name, model)
-        self.save_neural_network("neural")
+        self.save_neural_network("Neural")
 
     def determine_best_model(self):
         """Save the best performing model"""
@@ -390,12 +390,15 @@ class BrainTumorClassifier:
 
         return best_name
 
-    def load_models(self):
+    def load_conventional_models(self):
         for name, _ in self.models.items():
             model_data = joblib.load(model_files[name])
             self.models[name] = model_data["model"]
+
+    def load_models(self):
+        self.load_conventional_models()
         self.initialize_neural_network()
-        self.neural.load_weights(model_files["neural"])
+        self.neural.load_weights(model_files["Neural"])
 
 
 def main():
