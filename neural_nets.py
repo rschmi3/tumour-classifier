@@ -16,13 +16,13 @@ class Conv2dMaxPoolingLayer(Model):
             activation="relu",
         )
         self.max = layers.MaxPooling2D(pool_size=pool_size)
-        self.norm = layers.BatchNormalization()
         self.dropout = layers.Dropout(0.25)
 
-    def call(self, x):
+    def call(self, x, training=None):
         x = self.conv(x)
         x = self.max(x)
-        x = self.dropout(x)
+        if training:
+            x = self.dropout(x, training=training)
         return x
 
 

@@ -181,7 +181,7 @@ class BrainTumorClassifier:
         """Initialize neural network model"""
         model = TumourNet()
         dummy_input = np.zeros((1, *self.image_shape), dtype=np.float32)
-        _ = model(dummy_input)
+        _ = model(dummy_input, training=True)
         self.neural = TumourNetWrapper(model)
 
     def train_models(self, X_train, y_train):
