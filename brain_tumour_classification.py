@@ -58,7 +58,7 @@ model_files = {
     "SVM (Linear)": "SVM_Linear.pkl",
     "Gradient Boosting": "Gradient_Boosting.pkl",
     "K-Nearest Neighbors": "K-Nearest_Neighbors.pkl",
-    "Neural": "Neural.weights.h5",
+    "Neural_1": "Neural_1.weights.h5",
 }
 
 
@@ -86,7 +86,8 @@ class BrainTumorClassifier:
         self.valid_data = valid_data
         self.label_encoder = LabelEncoder()
         self.scaler = StandardScaler()
-        self.models = {}
+        self.conventional_models = {}
+        self.neural_networks = {}
         self.results = {}
         self.classes = classes
         self.cuda = cuda
@@ -142,15 +143,18 @@ class BrainTumorClassifier:
 
     def initialize_models(self, random_state):
         self.initialize_conventional_models(random_state)
-        self.initialize_neural_network()
-        print(f"\nInitialized {len(self.models)} models:")
-        for name in self.models.keys():
+        self.initialize_neural_networks()
+        print(
+            f"\nInitialized {len(self.conventional_models) + len(self.neural_networks)} models:"
+        )
+        for name in self.conventional_models.keys():
             print(f"  - {name}")
-        print("  - Neural")
+        for name in self.neural_networks.keys():
+            print(f"  - {name}")
 
     def initialize_conventional_models(self, random_state):
         """Initialize multiple classification models"""
-        self.models = {
+        self.conventional_models = {
             "Random Forest": RandomForestClassifier(
                 n_estimators=200,
                 max_depth=20,
@@ -184,12 +188,13 @@ class BrainTumorClassifier:
             ),
         }
 
-    def initialize_neural_network(self):
+    def initialize_neural_networks(self):
         """Initialize neural network model"""
         model = TumourNet()
         dummy_input = np.zeros((1, *self.image_shape), dtype=np.float32)
         _ = model(dummy_input, training=True)
-        self.neural = TumourNetWrapper(model)
+        self.neural_networks["Neural_1"] = TumourNetWrapper(model)
+        model.summary()
 
     def train_models(self, X_train, y_train):
         """Train all models and evaluate"""
@@ -200,11 +205,11 @@ class BrainTumorClassifier:
         y_train_neural = self.label_encoder.transform(self.train_data[1])
 
         self.train_conventional_models(X_train, y_train)
-        self.train_neural_network(self.train_data[0], y_train_neural)
+        self.train_neural_networks(self.train_data[0], y_train_neural)
 
     def train_conventional_models(self, X_train, y_train):
         """Train all conventional models"""
-        for name, model in self.models.items():
+        for name, model in self.conventional_models.items():
             train_start = time.time()
             print(f"\nTraining {name}...")
             model.fit(X_train, y_train)
@@ -213,10 +218,12 @@ class BrainTumorClassifier:
             self.results[name]["training_time"] = train_end - train_start
             print(self.results[name]["training_time"])
 
-    def train_neural_network(self, X_train, y_train):
+    def train_neural_networks(self, X_train, y_train):
         """Train neural network"""
-        self.neural.compile()
-        self.neural.fit(X_train, y_train, epochs=100)
+        for name, model in self.neural_networks.items():
+            print(f"\nTraining {name}...")
+            model.compile()
+            model.fit(X_train, y_train, epochs=100)
 
     def evaluate_models(self, X_val, y_val):
         print("\n" + "=" * 60)
@@ -226,7 +233,7 @@ class BrainTumorClassifier:
         y_val_neural = self.label_encoder.fit_transform(self.valid_data[1])
 
         self.evaluate_conventional_models(X_val, y_val)
-        self.evaluate_neural_net(self.valid_data[0], y_val_neural)
+        self.evaluate_neural_networks(self.valid_data[0], y_val_neural)
         return self.determine_best_model()
 
     def evaluate_model(self, name, model, X_val, y_val):
@@ -275,12 +282,13 @@ class BrainTumorClassifier:
 
     def evaluate_conventional_models(self, X_val, y_val):
         """Evaluate conventional models"""
-        for name, model in self.models.items():
+        for name, model in self.conventional_models.items():
             self.evaluate_model(name, model, X_val, y_val)
 
-    def evaluate_neural_net(self, X_val, y_val):
+    def evaluate_neural_networks(self, X_val, y_val):
         """Evaluate neural network"""
-        self.evaluate_model("Neural", self.neural, X_val, y_val)
+        for name, model in self.neural_networks.items():
+            self.evaluate_model(name, model, X_val, y_val)
 
     def plot_results(self, save_dir="results"):
         """Create visualizations of model performance"""
@@ -375,14 +383,15 @@ class BrainTumorClassifier:
 
         joblib.dump(model_data, filename)
 
-    def save_neural_network(self, name):
+    def save_neural_network(self, name, model):
         filename = model_files[name]
-        self.neural.save_weights(filename)
+        model.save_weights(filename)
 
     def save_models(self):
-        for name, model in self.models.items():
+        for name, model in self.conventional_models.items():
             self.save_conventional_model(name, model)
-        self.save_neural_network("Neural")
+        for name, model in self.neural_networks.items():
+            self.save_neural_network(name, model)
 
     def determine_best_model(self):
         """Save the best performing model"""
@@ -398,14 +407,17 @@ class BrainTumorClassifier:
         return best_name
 
     def load_conventional_models(self):
-        for name, _ in self.models.items():
+        for name, _ in self.conventional_models.items():
             model_data = joblib.load(model_files[name])
-            self.models[name] = model_data["model"]
+            self.conventional_models[name] = model_data["model"]
+
+    def load_neural_networks(self):
+        for name, model in self.neural_networks.items():
+            model.load_weights(model_files[name])
 
     def load_models(self):
         self.load_conventional_models()
-        self.initialize_neural_network()
-        self.neural.load_weights(model_files["Neural"])
+        self.load_neural_networks()
 
 
 def main():

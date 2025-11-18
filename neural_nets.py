@@ -10,6 +10,10 @@ class Conv2dMaxPoolingLayer(Model):
         pool_size: tuple[int, int] = (2, 2),
     ) -> None:
         super().__init__()
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.pool_size = pool_size
+
         self.conv = layers.Conv2D(
             filters=filters,
             kernel_size=kernel_size,
@@ -18,12 +22,36 @@ class Conv2dMaxPoolingLayer(Model):
         self.max = layers.MaxPooling2D(pool_size=pool_size)
         self.dropout = layers.Dropout(0.25)
 
+    def build(self, input_shape):
+        # Build the sub-layers
+        self.conv.build(input_shape)
+        conv_output_shape = self.conv.compute_output_shape(input_shape)
+        self.max.build(conv_output_shape)
+        super().build(input_shape)
+
     def call(self, x, training=None):
         x = self.conv(x)
         x = self.max(x)
         if training:
             x = self.dropout(x, training=training)
         return x
+
+    def compute_output_shape(self, input_shape):
+        # Chain the output shape computations
+        shape = self.conv.compute_output_shape(input_shape)
+        shape = self.max.compute_output_shape(shape)
+        return shape
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "filters": self.filters,
+                "kernel_size": self.kernel_size,
+                "pool_size": self.pool_size,
+            }
+        )
+        return config
 
 
 class TumourNet(Model):
@@ -105,5 +133,5 @@ class TumourNetWrapper:
         if isinstance(model, Model):
             self.model: Model = model
 
-    def load_weights(self, filename):
-        self.model.load_weights(filename)
+    def load_weights(self, filepath):
+        self.model.load_weights(filepath)
