@@ -133,6 +133,9 @@
             export PYTHONPATH="$PWD/src:$PYTHONPATH"
             python --version
 
+            echo "GPU Information:"
+            nvidia-smi 2>/dev/null || true
+
             echo "Testing CUDA availability..."
             python -c "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}'); print(f'Built with CUDA: {tf.test.is_built_with_cuda()}'); gpus = tf.config.list_physical_devices('GPU'); print(f'GPUs detected: {len(gpus)}'); [print(f'  {gpu.name}') for gpu in gpus]" 2>/dev/null || echo "TensorFlow not yet installed"'';
         };
