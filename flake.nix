@@ -108,7 +108,7 @@
 
         # CUDA shell
         cudaShell = pkgs.mkShell {
-          name = "tumour-classifier-cuda-shell";
+          name = "tumour-classifier-cuda";
           packages = with pkgs; [
             classifierPkg
             python.pkgs.ipython
@@ -151,7 +151,7 @@
         };
 
         rocmShell = pkgs.mkShell {
-          name = "tumour-classifier-rocm-shell";
+          name = "tumour-classifier-rocm";
           packages = with pkgs; [
             classifierPkg
 
