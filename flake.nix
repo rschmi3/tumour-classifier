@@ -18,6 +18,17 @@
           config.allowUnfree = true;
         };
 
+        xgboost-newer = pkgs.xgboost.overrideAttrs (old: rec {
+          version = "3.1.1";
+          src = pkgs.fetchFromGitHub {
+            owner = "dmlc";
+            repo = "xgboost";
+            rev = "v${version}";
+            fetchSubmodules = true;
+            hash = "sha256-+wNzUQHTmcmlAoh5TwM16WiIhnMHOTyrLFBJ6+ufcPk=";
+          };
+        });
+
         python = pkgs.python312.override {
           self = python;
 
@@ -26,15 +37,12 @@
             let
               tf = super.tensorflowWithCuda;
 
-              # Helper function to override tensorflow dependency
+              # Helper function to override tensorflow dependency with cuda support
               overrideTensorflow =
                 pkg:
                 (pkg.override {
                   tensorflow = tf;
-                }).overridePythonAttrs
-                  (old: {
-                    doCheck = false;
-                  });
+                });
 
               # Helper function to disable checks
               disableCheck =
@@ -42,8 +50,10 @@
                 pkg.overridePythonAttrs (old: {
                   doCheck = false;
                 });
+
               noCheckPkgs = [
               ];
+
               gpuTensorflowPkgs = [
                 "keras"
                 "tf2onnx"
@@ -54,7 +64,7 @@
             // pkgs.lib.genAttrs gpuTensorflowPkgs (name: overrideTensorflow super.${name})
             // {
               xgboost = super.xgboost.override {
-                xgboost = pkgs.xgboost.override { cudaSupport = true; };
+                xgboost = xgboost-newer.override { cudaSupport = true; };
               };
             };
         };
