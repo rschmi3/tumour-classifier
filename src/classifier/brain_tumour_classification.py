@@ -357,7 +357,7 @@ class BrainTumorClassifier:
             axes[idx].axis("off")
 
         plt.tight_layout()
-        confusion_matrix_path = self.results_dir / "model_comparison.png"
+        confusion_matrix_path = self.results_dir / "confusion_matrices.png"
         plt.savefig(confusion_matrix_path, dpi=300, bbox_inches="tight")
         plt.close()
 
