@@ -4,6 +4,7 @@ import argparse
 import os
 import random
 import time
+from pathlib import Path
 
 random_state = 42
 os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
@@ -17,6 +18,14 @@ import numpy as np
 import seaborn as sns
 import tensorflow as tf
 import xgboost as xgb
+from classifier.feature_extraction import (
+    extract_color_features,
+    extract_combined_features,
+    extract_hog_features,
+    extract_lbp_features,
+)
+from classifier.neural_nets import TumourNet, TumourNetWrapper
+from classifier.setup_data import download_dataset, load_images_and_labels
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -27,15 +36,6 @@ from sklearn.metrics import (
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
 from sklearn.svm import SVC
-
-from feature_extraction import (
-    extract_color_features,
-    extract_combined_features,
-    extract_hog_features,
-    extract_lbp_features,
-)
-from neural_nets import TumourNet, TumourNetWrapper
-from setup_data import download_dataset, load_images_and_labels
 
 # Set random seed for reproducibility
 random.seed(random_state)
@@ -52,15 +52,6 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-model_files = {
-    "Random Forest": "Random_Forest.pkl",
-    "SVM (RBF)": "SVM_RBF.pkl",
-    "SVM (Linear)": "SVM_Linear.pkl",
-    "Gradient Boosting": "Gradient_Boosting.pkl",
-    "K-Nearest Neighbors": "K-Nearest_Neighbors.pkl",
-    "Neural_1": "Neural_1.weights.h5",
-}
-
 
 class BrainTumorClassifier:
     def __init__(
@@ -68,6 +59,8 @@ class BrainTumorClassifier:
         train_data: tuple[np.ndarray, np.ndarray],
         valid_data: tuple[np.ndarray, np.ndarray],
         classes: set[str],
+        model_files: dict[str, Path],
+        results_dir: Path,
         cuda: bool = False,
     ):
         """
@@ -91,6 +84,8 @@ class BrainTumorClassifier:
         self.results = {}
         self.classes = classes
         self.cuda = cuda
+        self.model_files = model_files
+        self.results_dir = results_dir
 
         # Extract shape and assert it's a valid tuple
         shape = train_data[0].shape[1:]
@@ -290,9 +285,8 @@ class BrainTumorClassifier:
         for name, model in self.neural_networks.items():
             self.evaluate_model(name, model, X_val, y_val)
 
-    def plot_results(self, save_dir="results"):
+    def plot_results(self):
         """Create visualizations of model performance"""
-        os.makedirs(save_dir, exist_ok=True)
 
         # 1. Model comparison bar chart
         names = list(self.results.keys())
@@ -332,7 +326,8 @@ class BrainTumorClassifier:
 
         plt.ylim(0, 1.0)
         plt.tight_layout()
-        plt.savefig(f"{save_dir}/model_comparison.png", dpi=300, bbox_inches="tight")
+        model_comparison_path = self.results_dir / "model_comparison.png"
+        plt.savefig(model_comparison_path, dpi=300, bbox_inches="tight")
         plt.close()
 
         # 2. Confusion matrices
@@ -362,13 +357,14 @@ class BrainTumorClassifier:
             axes[idx].axis("off")
 
         plt.tight_layout()
-        plt.savefig(f"{save_dir}/confusion_matrices.png", dpi=300, bbox_inches="tight")
+        confusion_matrix_path = self.results_dir / "model_comparison.png"
+        plt.savefig(confusion_matrix_path, dpi=300, bbox_inches="tight")
         plt.close()
 
-        print(f"\nPlots saved to {save_dir}/")
+        print(f"\nPlots saved to {self.results_dir}")
 
     def save_conventional_model(self, name, model):
-        filename = model_files[name]
+        filename = self.model_files[name]
         print(f"\nSaving model: {name} to {filename}")
 
         # Save model, scaler, and label encoder
@@ -384,7 +380,7 @@ class BrainTumorClassifier:
         joblib.dump(model_data, filename)
 
     def save_neural_network(self, name, model):
-        filename = model_files[name]
+        filename = self.model_files[name]
         model.save_weights(filename)
 
     def save_models(self):
@@ -408,12 +404,12 @@ class BrainTumorClassifier:
 
     def load_conventional_models(self):
         for name, _ in self.conventional_models.items():
-            model_data = joblib.load(model_files[name])
+            model_data = joblib.load(self.model_files[name])
             self.conventional_models[name] = model_data["model"]
 
     def load_neural_networks(self):
         for name, model in self.neural_networks.items():
-            model.load_weights(model_files[name])
+            model.load_weights(self.model_files[name])
 
     def load_models(self):
         self.load_conventional_models()
@@ -428,10 +424,35 @@ def main():
     parser.add_argument(
         "--train", action="store_true", help="Train new models or load existing ones"
     )
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        default=Path("models"),
+        help="Directory to save models",
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path("results"),
+        help="Directory to save results",
+    )
+
     args = parser.parse_args()
     print("=" * 60)
     print(f"BRAIN TUMOR CLASSIFICATION {'(CUDA)' if args.cuda else ''}")
     print("=" * 60)
+
+    args.models_dir.mkdir(exist_ok=True)
+    args.results_dir.mkdir(exist_ok=True)
+
+    model_files: dict[str, Path] = {
+        "Random Forest": args.models_dir / "Random_Forest.pkl",
+        "SVM (RBF)": args.models_dir / "SVM_RBF.pkl",
+        "SVM (Linear)": args.models_dir / "SVM_Linear.pkl",
+        "Gradient Boosting": args.models_dir / "Gradient_Boosting.pkl",
+        "K-Nearest Neighbors": args.models_dir / "K-Nearest_Neighbors.pkl",
+        "Neural_1": args.models_dir / "Neural_1.weights.h5",
+    }
 
     dataset_path = download_dataset("deeppythonist/brain-tumor-mri-dataset")
 
@@ -441,7 +462,12 @@ def main():
 
     # Initialize classifier
     classifier = BrainTumorClassifier(
-        train_data=train_data, valid_data=valid_data, classes=classes, cuda=args.cuda
+        train_data=train_data,
+        valid_data=valid_data,
+        classes=classes,
+        model_files=model_files,
+        results_dir=args.results_dir,
+        cuda=args.cuda,
     )
 
     # Initialize and train models
@@ -468,7 +494,7 @@ def main():
     print("TRAINING COMPLETE")
     print("=" * 60)
     print(f"\nBest Model: {best_model_name}")
-    print("\nResults saved to 'results/' directory")
+    print(f"\nResults saved to {args.results_dir} directory")
 
 
 if __name__ == "__main__":
