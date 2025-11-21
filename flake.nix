@@ -211,6 +211,12 @@
           # Default to CUDA
           default = cudaShell;
         };
+
+        packages = {
+          default = classifierPkg;
+          tumour-classifier = classifierPkg;
+        };
+
         hydraJobs = {
           cudaShell = cudaShell;
           rocmShell = rocmShell;
